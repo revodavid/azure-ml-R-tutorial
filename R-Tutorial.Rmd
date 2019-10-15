@@ -30,8 +30,9 @@ library(azureml)
 
 We will also use some additional R packages:
 
-```{r packages}
+```{r packages, eval=FALSE}
 install.packages("DAAG")
+install.packages("caret")
 ```
 
 
@@ -47,8 +48,11 @@ can find by logging into the [Azure Portal](https://portal.azure.com). If you do
 * The Azure region location. Supported regions include: westus2 and ... ?
 
 ```{r create_ws}
-new_ws <- create_workspace(name = "r-analysis", 
-                           subscription_id = "4080037c-d995-46ca-9e70-724ebd271024", 
+## Provide your subscription ID here:
+subscription_id <- Sys.getenv("SUBSCRIPTION_ID", unset = "<my-subscription-id>")
+
+ws <- create_workspace(name = "r-analysis", 
+                           subscription_id = subscription_id, 
 			                     resource_group = "aml-r-tutorial", 
 			                     location = "westus2", 
 			                     create_resource_group = TRUE,
@@ -58,19 +62,84 @@ new_ws <- create_workspace(name = "r-analysis",
 Creating a workspace can take several minutes, but you only need to do it once. After the workspace is created, you can save it to a configuration file to the local machine.
 
 ```{r save_config}
-write_workspace_config(new_ws)
+write_workspace_config(ws)
+## You can retrieve the workspace later with:
+## ws <- load_workspace_from_config()
+
 ```
 
 ## Load data and prepare for training 
 
 You can find other datasets to work with [here](https://vincentarelbundock.github.io/Rdatasets/datasets.html).
 
-We will use data from the [DAAG package](https://cran.r-project.org/package=DAAG).
+We will use data from the [DAAG package](https://cran.r-project.org/package=DAAG). This dataset includes data from over 25,000 car crashes in the US, with variables we can use to predict the likelihood of a fatality. First, let's import the data into R and transform it into a new dataframe `accidents` for analysis, and export it to an Rdata file.
 
 ```{r load_data}
 library(DAAG)
 data(nassCDS)
+
+accidents <- na.omit(nassCDS[,c("dead","dvcat","seatbelt","frontal","sex","ageOFocc","yearVeh","airbag","occRole")])
+accidents$frontal <- factor(accidents$frontal, labels=c("notfrontal","frontal"))
+accidents$occRole <- factor(accidents$occRole)
+
+saveRDS(accidents, file="accidents.Rd")
 ```
+## Upload the data to the datastore
+Azure ML workspaces provide a default datastore which you can use to store data and other files needed for analysis.
+Here, we upload the accidents data we created above to the datastore.
+
+```{r upload_data}
+ds <- get_default_datastore(ws)
+target_path <- "accidentdata"
+upload_files_to_datastore(ds,
+                          list("./accidents.Rd"),
+                          target_path = target_path,
+                          overwrite = TRUE)
+```
+
+## Creating a compute resource
+When you need more power than your local laptop to train a model, create a compute resource. 
+Here we will create a virtual machine in Azure (which we will call `rcluster`) to use for training our model.
+
+```{r create_cluster}
+cluster_name <- "rcluster"
+compute_target <- get_compute(ws, cluster_name = cluster_name)
+if (is.null(compute_target)) {
+  vm_size <- "STANDARD_D2_V2" 
+  compute_target <- create_aml_compute(workspace = ws,
+                                       cluster_name = cluster_name,
+                                       vm_size = vm_size,
+                                       max_nodes = 1)
+}
+```
+
+## Training a model
+
+Now we can fit a logistic regression model on our uploaded data using our remote compute target. The script to fit the model will be called `accidents.R`, and it will be run as a command-line script with `Rscript` which takes one argument `-d` specifying the storage folder where the data file will be located. This argument will be provided for you by Azure ML Service.
+
+We specify the script file name and other options by creating an `estimator` object, and we initiate the computation by submitting an `experiment`. Note in particular the `cran_packages` option, which defines the packages that will be installed on the compute cluster for R to use.
+
+```{r train}
+est <- estimator(source_directory = ".",
+                 entry_script = "accidents.R",
+                 script_params = list("--data_folder" = ds$path(target_path)),
+                 compute_target = compute_target,
+                 cran_packages = c("caret", "optparse"))
+
+experiment_name <- "accident-logreg"
+exp <- experiment(ws, experiment_name)
+
+run <- submit_experiment(exp, est)
+view_run_details(run)
+wait_for_run_completion(run, show_output = TRUE)
+
+metrics <- get_run_metrics(run)
+metrics
+```
+
+
+
+
 
 ## Including Plots
 

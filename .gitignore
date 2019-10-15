@@ -1,3 +1,6 @@
+# Secrets not to check in to github
+secrets.R
+
 # Visual Studio Code settings
 .vscode/
 
