@@ -124,7 +124,8 @@ est <- estimator(source_directory = ".",
                  entry_script = "accidents.R",
                  script_params = list("--data_folder" = ds$path(target_path)),
                  compute_target = compute_target,
-                 cran_packages = c("caret", "optparse"))
+                 cran_packages = c("caret", "optparse", "e1071")
+                 )
 
 experiment_name <- "accident-logreg"
 exp <- experiment(ws, experiment_name)
@@ -132,13 +133,33 @@ exp <- experiment(ws, experiment_name)
 run <- submit_experiment(exp, est)
 view_run_details(run)
 wait_for_run_completion(run, show_output = TRUE)
+```
 
+In the file `accidents.R` we stored a metric from our model: the accuracy of the predictions in the training data. (You can store any metrics you like.)
+You can see metrics in the Azure portal, or extract them to the local session as an R list as follows:
+
+```{r metricss}
 metrics <- get_run_metrics(run)
 metrics
 ```
 
+## Retrieving the model
+
+Now that you've fit the logistic regression model in the remote compute resource, we can retrieve the model object and look at the results in our local R session. Here we see that impact speed, whether the driver was male, the age of the occupant, and whether the victim was a passenger significantly increase the estimated probability of death, while the presence of airbags and seatbelts, and whether the impact was a frontal collision decrease the probabilty. The vehicle year of manufacture does not have a significant effect.
+
+```{r retrieve-model}
+download_files_from_run(run, prefix="outputs/")
+model <- readRDS("outputs/model.rds")
+summary(model)
+```
+
+## Deploying a prediction endpoint
+
+With our model, we can predict predict the danger death from of other types of collisions. We can use Azure ML to deploy our model as a prediction service, and then call the model from a Shiny app.
 
 
+
+## Using the prediction endpoint from a Shiny app
 
 
 ## Including Plots

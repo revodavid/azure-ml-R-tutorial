@@ -1,8 +1,16 @@
-# Secrets not to check in to github
+# Artifacts of this repo
 secrets.R
+accidents.Rd
+.azureml/
+R-Tutorial.html
+outputs/
+
+# RStudio
+*.Rproj
 
 # Visual Studio Code settings
 .vscode/
+
 
 # History files
 .Rhistory

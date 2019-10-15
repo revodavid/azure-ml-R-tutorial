@@ -23,5 +23,5 @@ message(conf_matrix)
 current_run <- get_current_run()
 log_metric_to_run("Accuracy", conf_matrix$overall["Accuracy"], current_run)
 
-saveRDS(model, file = "./outputs/model.rds")
+saveRDS(mod, file = "./outputs/model.rds")
 message("Model saved")
