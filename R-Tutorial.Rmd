@@ -1,0 +1,83 @@
+---
+title: "R Tutorial"
+author: "David Smith"
+date: "10/14/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+In this tutorial...
+
+## Configure your environment
+
+To use the Azure ML R SDK, you will need to have Conda installed along with Python 3.5. Follow the [installation instructions](https://azure.github.io/azureml-sdk-for-r/articles/installation.html).
+
+```{r install, eval=FALSE}
+remotes::install_github('https://github.com/Azure/azureml-sdk-for-r', INSTALL_opts=c("--no-multiarch"))
+
+azureml::install_azureml()
+```
+
+## Launch RStudio and load the azureml package
+
+We recommend using RStudio to run these examples. Launch RStudio and then:
+
+```{r launch}
+library(azureml)
+```
+
+We will also use some additional R packages:
+
+```{r packages}
+install.packages("DAAG")
+```
+
+
+## Create a Workspace
+
+An Azure Machine Learning workspace is a foundational resource in the cloud that you use to experiment, train, and deploy machine learning models. It ties your Azure subscription and resource group to an easily consumed object in the service.
+
+You will need several bits of Azure information to proceed, which you 
+can find by logging into the [Azure Portal](https://portal.azure.com). If you don't have an Azure subscription, create one by visiting https://aka.ms/azure-free-credits .
+
+* Your Azure Subscription ID. Find this under "Subscriptions". It will look something like: 9178352c-d995-46ca-9e70-724ebd271024
+* A resource group name. You can choose any name you like, here we create a new one called `aml-r-tutorial`.
+* The Azure region location. Supported regions include: westus2 and ... ?
+
+```{r create_ws}
+new_ws <- create_workspace(name = "r-analysis", 
+                           subscription_id = "4080037c-d995-46ca-9e70-724ebd271024", 
+			                     resource_group = "aml-r-tutorial", 
+			                     location = "westus2", 
+			                     create_resource_group = TRUE,
+			                     exist_ok = TRUE)
+```
+
+Creating a workspace can take several minutes, but you only need to do it once. After the workspace is created, you can save it to a configuration file to the local machine.
+
+```{r save_config}
+write_workspace_config(new_ws)
+```
+
+## Load data and prepare for training 
+
+You can find other datasets to work with [here](https://vincentarelbundock.github.io/Rdatasets/datasets.html).
+
+We will use data from the [DAAG package](https://cran.r-project.org/package=DAAG).
+
+```{r load_data}
+library(DAAG)
+data(nassCDS)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
