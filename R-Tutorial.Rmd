@@ -5,20 +5,37 @@ date: "10/14/2019"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-In this tutorial...
+# Tutorial: Train your first ML model using R & Azure Machine Learning
 
-## Configure your environment
+In this tutorial, you learn the foundational design patterns in Azure Machine Learning.  You'll train and deploy a `caret` model to predict the likelihood of a fatality in an automobile accident. After completing this tutorial, you'll have the practical knowledge of the R SDK to scale up to developing more-complex experiments and workflows.
 
-To use the Azure ML R SDK, you will need to have Conda installed along with Python 3.5. Follow the [installation instructions](https://azure.github.io/azureml-sdk-for-r/articles/installation.html).
+In this tutorial, you learn the following tasks:
 
-```{r install, eval=FALSE}
+
+> * Connect your workspae
+> * Load data and prepare for training
+> * Upload data to the datastore so it is available for remote training
+> * Create a compute resource
+> * Train a caret model to predict probability of fatality
+> * Deploy a prediction endpoint
+> * Test the model from R
+> * Use the prediction endpoint from a Shiny app
+
+If you don’t have an Azure subscription, create a free account before you begin. Try the [free or paid version of Azure Machine Learning](https://aka.ms/AMLFree) today.
+
+## Prerequisites
+
+Follow the steps in [Tutorial: Get started with Azure Machine Learning and its R SDK](https://docs.microsoft.com/azure/machine-learning/service/tutorial-1st-experiment-r-set-up) to get started using RStudio on a cloud-based compute instance in your Azure subscription.  
+
+Or install on your own server. To use the Azure ML R SDK, you need to have Conda installed along with Python 3.5. Follow the [installation instructions](https://azure.github.io/azureml-sdk-for-r/articles/installation.html).
+
+```R
 remotes::install_github('https://github.com/Azure/azureml-sdk-for-r', INSTALL_opts=c("--no-multiarch"))
 
 azureml::install_azureml()
 ```
+
+@@MINNA - are there setup instructions in GitHub that create a workspace and write a config file?  That's where we should point to if they want to install on their own...I don't think the instrucions above do that?
 
 ## Launch RStudio and load the azureml package
 
@@ -28,51 +45,29 @@ We recommend using RStudio to run these examples. Launch RStudio and then:
 library(azureml)
 ```
 
-We will also use some additional R packages:
+You'll use these additional R packages:
 
 ```{r packages, eval=FALSE}
 install.packages("DAAG")
 install.packages("caret")
 ```
 
-
-## Create a Workspace
+## Load your workspace
 
 An Azure Machine Learning workspace is a foundational resource in the cloud that you use to experiment, train, and deploy machine learning models. It ties your Azure subscription and resource group to an easily consumed object in the service.
 
-You will need several bits of Azure information to proceed, which you 
-can find by logging into the [Azure Portal](https://portal.azure.com). If you don't have an Azure subscription, create one by visiting https://aka.ms/azure-free-credits .
+Import the `Workspace` class, and load your subscription information from the file `config.json` using the function `load_workspace_from_config`. This function looks for the JSON file in the current directory by default, but you can also specify a path parameter to point to the file using `from_config(path="your/file/path")`. In RStudio on your compute instance, the file is already in the root directory.
 
-* Your Azure Subscription ID. Find this under "Subscriptions". It will look something like: 9178352c-d995-46ca-9e70-724ebd271024
-* A resource group name. You can choose any name you like, here we create a new one called `aml-r-tutorial`.
-* The Azure region location. Supported regions include: westus2 and ... ?
-
-```{r create_ws}
-## Provide your subscription ID here:
-subscription_id <- Sys.getenv("SUBSCRIPTION_ID", unset = "<my-subscription-id>")
-
-ws <- create_workspace(name = "r-analysis", 
-                           subscription_id = subscription_id, 
-			                     resource_group = "aml-r-tutorial", 
-			                     location = "westus2", 
-			                     create_resource_group = TRUE,
-			                     exist_ok = TRUE)
-```
-
-Creating a workspace can take several minutes, but you only need to do it once. After the workspace is created, you can save it to a configuration file to the local machine.
-
-```{r save_config}
-write_workspace_config(ws)
-## You can retrieve the workspace later with:
-## ws <- load_workspace_from_config()
+```R
+ ws <- load_workspace_from_config()
 
 ```
 
 ## Load data and prepare for training 
 
-You can find other datasets to work with [here](https://vincentarelbundock.github.io/Rdatasets/datasets.html).
+This tutorial uses data from the [DAAG package](https://cran.r-project.org/package=DAAG). This dataset includes data from over 25,000 car crashes in the US, with variables you can use to predict the likelihood of a fatality. First, import the data into R and transform it into a new dataframe `accidents` for analysis, and export it to an `Rdata` file.
 
-We will use data from the [DAAG package](https://cran.r-project.org/package=DAAG). This dataset includes data from over 25,000 car crashes in the US, with variables we can use to predict the likelihood of a fatality. First, let's import the data into R and transform it into a new dataframe `accidents` for analysis, and export it to an Rdata file.
+You can find other datasets to work with [here](https://vincentarelbundock.github.io/Rdatasets/datasets.html).
 
 ```{r load_data}
 library(DAAG)
@@ -84,9 +79,11 @@ accidents$occRole <- factor(accidents$occRole)
 
 saveRDS(accidents, file="accidents.Rd")
 ```
-## Upload the data to the datastore
-Azure ML workspaces provide a default datastore which you can use to store data and other files needed for analysis.
-Here, we upload the accidents data we created above to the datastore.
+
+## Upload data to the datastore
+
+Azure Machine Learning workspaces provide a default datastore where you can store data and other files needed for analysis.
+Here, upload the accidents data you created above to the datastore.
 
 ```{r upload_data}
 ds <- get_default_datastore(ws)
@@ -97,9 +94,10 @@ upload_files_to_datastore(ds,
                           overwrite = TRUE)
 ```
 
-## Creating a compute resource
+## Create a compute resource
+
 When you need more power than your local laptop to train a model, create a compute resource. 
-Here we will create a virtual machine in Azure (which we will call `rcluster`) to use for training our model.
+Here you create a virtual machine in Azure (and give it a name of `rcluster`) to use for training your model.
 
 ```{r create_cluster}
 cluster_name <- "rcluster"
@@ -113,11 +111,17 @@ if (is.null(compute_target)) {
 }
 ```
 
-## Training a model
+## Train a model
 
-Now we can fit a logistic regression model on our uploaded data using our remote compute target. The script to fit the model will be called `accidents.R`, and it will be run as a command-line script with `Rscript` which takes one argument `-d` specifying the storage folder where the data file will be located. This argument will be provided for you by Azure ML Service.
+Now fit a logistic regression model on your uploaded data using your remote compute target.
 
-We specify the script file name and other options by creating an `estimator` object, and we initiate the computation by submitting an `experiment`. Note in particular the `cran_packages` option, which defines the packages that will be installed on the compute cluster for R to use.
+The script to fit the model is called `accidents.R`. It will be run as a command-line script with `Rscript`.   `Rscript` takes one argument, `-d` to specify the storage folder where the data file is located. The argument will be provided for you by Azure Machine Learning.
+
+To run the training script:
+
+* Create an `estimator` object to specify the script file name, parameters for the script file, and other options. The code below uses the compute cluster to run the script. The `cran_packages` option defines the packages to be installed on the compute cluster for R to use.
+* Create an `experiment` to start the computation.
+* Submit the experiment and wait until it's finished.
 
 ```{r train}
 est <- estimator(source_directory = ".",
@@ -135,21 +139,35 @@ view_run_details(run)
 wait_for_run_completion(run, show_output = TRUE)
 ```
 
-(Note that you -- and colleagues with access to the workspace -- can submit multiple experiments in parallel, and Azure ML Services will take of scheduling the tasks on the compute cluster. You can even configure the cluster to automatically scale up to multiple nodes, and scale back when there are no more compute tasks in the queue. This is a cost-effective way for teams to share compute resources.)
+(You -- and colleagues with access to the workspace -- can submit multiple experiments in parallel, and Azure Machine Learning will take of scheduling the tasks on the compute cluster. You can even configure the cluster to automatically scale up to multiple nodes, and scale back when there are no more compute tasks in the queue. This configuration is a cost-effective way for teams to share compute resources.)
 
-In the file `accidents.R` we stored a metric from our model: the accuracy of the predictions in the training data. (You can store any metrics you like.)
-You can see metrics in the Azure portal, or extract them to the local session as an R list as follows:
+In the file `accidents.R`, you stored a metric from your model: the accuracy of the predictions in the training data. (You can store any metrics you like.)
+
+You can see metrics in your workspace in [Azure Machine Learning studio](https://ml.azure.com), or extract them to the local session as an R list as follows:
 
 ```{r metricss}
 metrics <- get_run_metrics(run)
 metrics
 ```
+> NOTE
+> If you've run multiple experiments (say, using differing variables, algorithms, or hyperparamers), you can use the metrics from each run to choose the model you'll use in production.
 
-Note: if you've run multiple experiments (say, using differing variables, algorithms, or hyperparamers), you can use the metrics you've saved from each run to choose the model you will use in production.
+## Retrieve the model
 
-## Retrieving the model
+Now that you've fit the logistic regression model in the remote compute resource, you can retrieve the model object and look at the results in your local R session. 
 
-Now that you've fit the logistic regression model in the remote compute resource, we can retrieve the model object and look at the results in our local R session. Here we see that impact speed, whether the driver was male, the age of the occupant, and whether the victim was a passenger significantly increase the estimated probability of death, while the presence of airbags and seatbelts, and whether the impact was a frontal collision decrease the probability. The vehicle year of manufacture does not have a significant effect.
+You see some factors that contribute to an increase in the estimated probability of death:
+* higher impact speed 
+* male driver
+* older occupant
+* passenger
+
+You see lower probabilities of death with:
+* presence of airbags
+* presence seatbelts
+* frontal collision 
+
+The vehicle year of manufacture does not have a significant effect.
 
 ```{r retrieve-model}
 download_files_from_run(run, prefix="outputs/")
@@ -174,9 +192,9 @@ newdata <- data.frame( # valid values shown below
 as.numeric(predict(accident_model,newdata, type="response")*100)
 ```
 
-## Deploying a prediction endpoint
+## Deploy a prediction endpoint
 
-With our model, we can predict predict the danger death from of other types of collisions. We can use Azure ML to deploy our model as a prediction service, and then call the model from a Shiny app.
+With your model, you can predict the danger death from of other types of collisions. Use Azure Machine Learning to deploy your model as a prediction service, and then call the model from a Shiny app.
 
 First, register the model you downloaded for deployment:
 
@@ -187,17 +205,17 @@ model <- register_model(ws,
                         description = "Predict probablity of auto accident")
 ```
 
-A registered model can be any collection of files, but in this case the R model object is sufficient. Azure ML Service will track models each time they are deployed, which is our next step.
+A registered model can be any collection of files, but in this case the R model object is sufficient. Azure Machine Learning will track models each time they are deployed, which is our next step.
 
-To create a web service for your model, you first need to create an **entry script**: an R script which will take as input variable values (in JSON format) and output a prediction from your model. Use the file `accident-predict.R`.
+To create a web service for your model, you first need to create an **entry script**: an R script that will take as input variable values (in JSON format) and output a prediction from your model. Use the file `accident-predict.R`.
 
-Next, define an **environment** for your deployed model. With an environment, you can specify R packages (from CRAN or elsewhere) that need to be available for your entry script to run, and the values of environment variables (which your script can reference to modify its behavior). You can also specify a custom Docker image to use, if you need software other than R to be available. In our case we have no special requirements, so create an environment with no special attributes:
+Next, define an **environment** for your deployed model. With an environment, you specify R packages (from CRAN or elsewhere) that are needed for your entry script to run. You also provide the values of environment variables that your script can reference to modify its behavior. If you need software other than R to be available, specify a custom Docker image to use. In this tutorial, there are no special requirements, so create an environment with no special attributes:
 
 ```{r Create environment, eval=FALSE}
 r_env <- r_environment(name = "basic_env")
 ```
 
-Now we have everything we need to create an **inference config** combining the  
+Now you have everything you need to create an **inference config**:
 
 ``` {r Create inference config, eval=FALSE}
 inference_config <- inference_config(
@@ -206,13 +224,16 @@ inference_config <- inference_config(
   environment = r_env)
 ```
 
-We will deploy our service to Azure Container Instances. This will provision a single container to respond to inbound requests, which is suitable for testing and light loads. (For production scale, you can also deploy to Azure Kubernetes Service.)
+You'll deploy your service to Azure Container Instances. This code provisions a single container to respond to inbound requests, which is suitable for testing and light loads. (For production scale, you can also deploy to Azure Kubernetes Service.)
 
 ``` {r Web service configuration, eval=FALSE}
 aci_config <- aci_webservice_deployment_config(cpu_cores = 1, memory_gb = 0.5)
 ```
 
-Now we can deploy our service. (Note that this can take several minutes.)
+Now you deploy your service. 
+
+> NOTE
+> Deployment can take several minutes.
 
 ```{r Deploy web service to AKS, eval=FALSE}
 aci_service <- deploy_model(ws, 
@@ -223,9 +244,9 @@ aci_service <- deploy_model(ws,
 wait_for_deployment(aci_service, show_output = TRUE)
 ```
 
-## Testing the model from R
+## Test the model from R
 
-Now that our model is deployed as a service, we can test the service from R.  Provide a new set of data to predict from, convert it to JSON, and send it to the service.
+Now that your model is deployed as a service, you can test the service from R.  Provide a new set of data to predict from, convert it to JSON, and send it to the service.
 
 ```{r test_deployment}
 newdata <- data.frame( # valid values shown below
@@ -242,7 +263,7 @@ prob <- invoke_webservice(aci_service, toJSON(newdata))
 prob
 ```
 
-## Using the prediction endpoint from a Shiny app
+## Use the prediction endpoint from a Shiny app
 
 
 ## Including Plots
@@ -253,4 +274,38 @@ You can also embed plots, for example:
 plot(pressure)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+The `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+## Clean up resources
+
+Do not complete this section if you plan on running other Azure Machine Learning tutorials.
+
+### Stop the compute instance
+
+If you used a compute instance, stop the VM when you are not using it to reduce cost.
+
+1. In your workspace, select **Compute**.
+
+1. From the list, select the VM.
+
+1. Select **Stop**.
+
+1. When you're ready to use the server again, select **Start**.
+
+### Delete everything
+
+>IMPORTANT
+>The resources you created can be used as prerequisites to other Azure Machine Learning service tutorials and how-to articles. 
+
+If you don't plan to use the resources you created, delete them, so you don't incur any charges:
+
+1. In the Azure portal, select **Resource groups** on the far left.
+ 
+1. From the list, select the resource group you created.
+
+1. Select **Delete resource group**.
+
+1. Enter the resource group name. Then select **Delete**.
+
+You can also keep the resource group but delete a single workspace. Display the workspace properties and select **Delete**.
+
