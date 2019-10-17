@@ -135,6 +135,8 @@ view_run_details(run)
 wait_for_run_completion(run, show_output = TRUE)
 ```
 
+(Note that you -- and colleagues with access to the workspace -- can submit multiple experiments in parallel, and Azure ML Services will take of scheduling the tasks on the compute cluster. You can even configure the cluster to automatically scale up to multiple nodes, and scale back when there are no more compute tasks in the queue. This is a cost-effective way for teams to share compute resources.)
+
 In the file `accidents.R` we stored a metric from our model: the accuracy of the predictions in the training data. (You can store any metrics you like.)
 You can see metrics in the Azure portal, or extract them to the local session as an R list as follows:
 
@@ -143,21 +145,102 @@ metrics <- get_run_metrics(run)
 metrics
 ```
 
+Note: if you've run multiple experiments (say, using differing variables, algorithms, or hyperparamers), you can use the metrics you've saved from each run to choose the model you will use in production.
+
 ## Retrieving the model
 
-Now that you've fit the logistic regression model in the remote compute resource, we can retrieve the model object and look at the results in our local R session. Here we see that impact speed, whether the driver was male, the age of the occupant, and whether the victim was a passenger significantly increase the estimated probability of death, while the presence of airbags and seatbelts, and whether the impact was a frontal collision decrease the probabilty. The vehicle year of manufacture does not have a significant effect.
+Now that you've fit the logistic regression model in the remote compute resource, we can retrieve the model object and look at the results in our local R session. Here we see that impact speed, whether the driver was male, the age of the occupant, and whether the victim was a passenger significantly increase the estimated probability of death, while the presence of airbags and seatbelts, and whether the impact was a frontal collision decrease the probability. The vehicle year of manufacture does not have a significant effect.
 
 ```{r retrieve-model}
 download_files_from_run(run, prefix="outputs/")
-model <- readRDS("outputs/model.rds")
-summary(model)
+accident_model <- readRDS("outputs/model.rds")
+summary(accident_model)
+```
+
+You can use this model to make new predictions:
+
+```{r manual_predict}
+newdata <- data.frame( # valid values shown below
+ dvcat="10-24",        # "1-9km/h" "10-24"   "25-39"   "40-54"   "55+"  
+ seatbelt="none",      # "none"   "belted"  
+ frontal="frontal",    # "notfrontal" "frontal"
+ sex="f",              # "f" "m"
+ ageOFocc=16,          # age in years, 16-97
+ yearVeh=2002,         # year of vehicle, 1955-2003
+ airbag="none",        # "none"   "airbag"   
+ occRole="pass"        # "driver" "pass"
+ )
+## predicted probability of death for these variables, as a percentage
+as.numeric(predict(accident_model,newdata, type="response")*100)
 ```
 
 ## Deploying a prediction endpoint
 
 With our model, we can predict predict the danger death from of other types of collisions. We can use Azure ML to deploy our model as a prediction service, and then call the model from a Shiny app.
 
+First, register the model you downloaded for deployment:
 
+```
+model <- register_model(ws, 
+                        model_path = "outputs/model.rds", 
+                        model_name = "accidents_model",
+                        description = "Predict probablity of auto accident")
+```
+
+A registered model can be any collection of files, but in this case the R model object is sufficient. Azure ML Service will track models each time they are deployed, which is our next step.
+
+To create a web service for your model, you first need to create an **entry script**: an R script which will take as input variable values (in JSON format) and output a prediction from your model. Use the file `accident-predict.R`.
+
+Next, define an **environment** for your deployed model. With an environment, you can specify R packages (from CRAN or elsewhere) that need to be available for your entry script to run, and the values of environment variables (which your script can reference to modify its behavior). You can also specify a custom Docker image to use, if you need software other than R to be available. In our case we have no special requirements, so create an environment with no special attributes:
+
+```{r Create environment, eval=FALSE}
+r_env <- r_environment(name = "basic_env")
+```
+
+Now we have everything we need to create an **inference config** combining the  
+
+``` {r Create inference config, eval=FALSE}
+inference_config <- inference_config(
+  entry_script = "accident-predict.R",
+  source_directory = ".",
+  environment = r_env)
+```
+
+We will deploy our service to Azure Container Instances. This will provision a single container to respond to inbound requests, which is suitable for testing and light loads. (For production scale, you can also deploy to Azure Kubernetes Service.)
+
+``` {r Web service configuration, eval=FALSE}
+aci_config <- aci_webservice_deployment_config(cpu_cores = 1, memory_gb = 0.5)
+```
+
+Now we can deploy our service. (Note that this can take several minutes.)
+
+```{r Deploy web service to AKS, eval=FALSE}
+aci_service <- deploy_model(ws, 
+                        'accident-pred', 
+                        list(model), 
+                        inference_config, 
+                        aci_config)
+wait_for_deployment(aci_service, show_output = TRUE)
+```
+
+## Testing the model from R
+
+Now that our model is deployed as a service, we can test the service from R.  Provide a new set of data to predict from, convert it to JSON, and send it to the service.
+
+```{r test_deployment}
+newdata <- data.frame( # valid values shown below
+ dvcat="10-24",        # "1-9km/h" "10-24"   "25-39"   "40-54"   "55+"  
+ seatbelt="none",      # "none"   "belted"  
+ frontal="frontal",    # "notfrontal" "frontal"
+ sex="f",              # "f" "m"
+ ageOFocc=22,          # age in years, 16-97
+ yearVeh=2002,         # year of vehicle, 1955-2003
+ airbag="none",        # "none"   "airbag"   
+ occRole="pass"        # "driver" "pass"
+ )
+prob <- invoke_webservice(aci_service, toJSON(newdata))
+prob
+```
 
 ## Using the prediction endpoint from a Shiny app
 
