@@ -1,7 +1,7 @@
 ---
 title: "R Tutorial"
 author: "David Smith"
-date: "10/14/2019"
+date: "10/17/2019"
 output: html_document
 ---
 
@@ -29,10 +29,10 @@ Follow the steps in [Tutorial: Get started with Azure Machine Learning and its R
 
 Or install on your own server. To use the Azure ML R SDK, you need to have Conda installed along with Python 3.5. Follow the [installation instructions](https://azure.github.io/azureml-sdk-for-r/articles/installation.html).
 
-```R
+```{r install_packages, eval=FALSE}
 remotes::install_github('https://github.com/Azure/azureml-sdk-for-r', INSTALL_opts=c("--no-multiarch"))
 
-azureml::install_azureml()
+azuremlsdk::install_azureml()
 ```
 
 @@MINNA - are there setup instructions in GitHub that create a workspace and write a config file?  That's where we should point to if they want to install on their own...I don't think the instrucions above do that?
@@ -42,32 +42,40 @@ azureml::install_azureml()
 We recommend using RStudio to run these examples. Launch RStudio and then:
 
 ```{r launch}
-library(azureml)
+library(azuremlsdk)
 ```
 
 You'll use these additional R packages:
 
-```{r packages, eval=FALSE}
+```{r packages, eval=FALSE, echo=FALSE}
 install.packages("DAAG")
 install.packages("caret")
 ```
 
 ## Load your workspace
 
-An Azure Machine Learning workspace is a foundational resource in the cloud that you use to experiment, train, and deploy machine learning models. It ties your Azure subscription and resource group to an easily consumed object in the service.
+An Azure Machine Learning workspace is a foundational resource in the cloud that you use to experiment, train, and deploy machine learning models. It ties your Azure subscription and resource group to an easily consumed object in the service. Information about your workspace is captured in a "config file". 
 
-Import the `Workspace` class, and load your subscription information from the file `config.json` using the function `load_workspace_from_config`. This function looks for the JSON file in the current directory by default, but you can also specify a path parameter to point to the file using `from_config(path="your/file/path")`. In RStudio on your compute instance, the file is already in the root directory.
+In RStudio on your compute instance, the file is already in the root directory and you can skip this next step. If you are using your own environment, create it as follows. You will need to supply your Azure Subscription ID and your selected workspace name and resource group name below. (Note: you only need to do this once).
 
-```R
- ws <- load_workspace_from_config()
+```{r create config file}
+subscription_id <- Sys.getenv("SUBSCRIPTION_ID", unset = "<my-subscription-id>")
+ws <- get_workspace(name = "docs-ws", 
+                           subscription_id = subscription_id, 
+			                     resource_group = "docs-aml")
 
+write_workspace_config(ws)
+```
+
+Now define a workspace object in R by loading your config file.
+
+```{r load_workpace}
+ws <- load_workspace_from_config()
 ```
 
 ## Load data and prepare for training 
 
 This tutorial uses data from the [DAAG package](https://cran.r-project.org/package=DAAG). This dataset includes data from over 25,000 car crashes in the US, with variables you can use to predict the likelihood of a fatality. First, import the data into R and transform it into a new dataframe `accidents` for analysis, and export it to an `Rdata` file.
-
-You can find other datasets to work with [here](https://vincentarelbundock.github.io/Rdatasets/datasets.html).
 
 ```{r load_data}
 library(DAAG)
@@ -115,6 +123,9 @@ if (is.null(compute_target)) {
 
 Now fit a logistic regression model on your uploaded data using your remote compute target.
 
+> NOTE
+> You may need to wait a few minutes for your compute cluster to be provisioned before moving on to the next step.
+
 The script to fit the model is called `accidents.R`. It will be run as a command-line script with `Rscript`.   `Rscript` takes one argument, `-d` to specify the storage folder where the data file is located. The argument will be provided for you by Azure Machine Learning.
 
 To run the training script:
@@ -145,7 +156,7 @@ In the file `accidents.R`, you stored a metric from your model: the accuracy of 
 
 You can see metrics in your workspace in [Azure Machine Learning studio](https://ml.azure.com), or extract them to the local session as an R list as follows:
 
-```{r metricss}
+```{r metrics}
 metrics <- get_run_metrics(run)
 metrics
 ```
@@ -198,7 +209,7 @@ With your model, you can predict the danger death from of other types of collisi
 
 First, register the model you downloaded for deployment:
 
-```
+```{r register_model}
 model <- register_model(ws, 
                         model_path = "outputs/model.rds", 
                         model_name = "accidents_model",
@@ -235,7 +246,7 @@ Now you deploy your service.
 > NOTE
 > Deployment can take several minutes.
 
-```{r Deploy web service to AKS, eval=FALSE}
+```{r Deploy web service to AKS}
 aci_service <- deploy_model(ws, 
                         'accident-pred', 
                         list(model), 
@@ -262,19 +273,6 @@ newdata <- data.frame( # valid values shown below
 prob <- invoke_webservice(aci_service, toJSON(newdata))
 prob
 ```
-
-## Use the prediction endpoint from a Shiny app
-
-
-## Including Plots
-
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
-```
-
-The `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
 
 ## Clean up resources
 

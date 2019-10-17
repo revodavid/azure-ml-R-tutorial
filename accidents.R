@@ -1,4 +1,4 @@
-library("azureml")
+library("azuremlsdk")
 library("optparse")
 library("caret")
 
