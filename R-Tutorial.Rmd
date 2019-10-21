@@ -19,7 +19,6 @@ In this tutorial, you learn the following tasks:
 > * Train a caret model to predict probability of fatality
 > * Deploy a prediction endpoint
 > * Test the model from R
-> * Use the prediction endpoint from a Shiny app
 
 If you don’t have an Azure subscription, create a free account before you begin. Try the [free or paid version of Azure Machine Learning](https://aka.ms/AMLFree) today.
 
