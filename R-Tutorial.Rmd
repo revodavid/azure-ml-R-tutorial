@@ -32,7 +32,7 @@ If you are not using a compute instance, use the steps below to install on your 
 
 1. An Azure Machine Learning workspace is a foundational resource in the cloud that you use to experiment, train, and deploy machine learning models. It ties your Azure subscription and resource group to an easily consumed object in the service. Information about your workspace is captured in a "config file".  Create a workspace and save this file with the code below. You will need to supply your Azure Subscription ID and your selected workspace name and resource group name. (Note: you only need to do this once).
 
-    ```{r create config file}
+    ```{r create config file, eval=FALSE, echo=FALSE}}
     subscription_id <- Sys.getenv("SUBSCRIPTION_ID", unset = "<my-subscription-id>")
     ws <- get_workspace(name = "docs-ws", 
                                subscription_id = subscription_id, 
@@ -180,6 +180,7 @@ summary(accident_model)
 You can use this model to make new predictions:
 
 ```{r manual_predict}
+library(jsonlite)
 newdata <- data.frame( # valid values shown below
  dvcat="10-24",        # "1-9km/h" "10-24"   "25-39"   "40-54"   "55+"  
  seatbelt="none",      # "none"   "belted"  
