@@ -61,7 +61,7 @@ install.packages("caret")
 Now define a workspace object in R by loading your config file.
 
 ```{r load_workpace}
-ws <- load_workspace_from_config()
+ws <- load_workspace_from_config(".")
 ```
 
 ## Load data and prepare for training 
